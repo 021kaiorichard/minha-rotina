@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <style>
     :root {
       --bg: #0f172a;
@@ -623,9 +624,9 @@
     </div>
 
     <div class="footer-actions">
-      <button class="btn btn-secondary" id="btnExport" title="Baixar rotina em JSON">
+      <button class="btn btn-secondary" id="btnExport" title="Baixar rotina em PDF">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-        Exportar
+        Exportar PDF
       </button>
       <button class="btn btn-danger" id="btnClear" title="Apagar toda a rotina">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
@@ -929,16 +930,92 @@
           }
         });
 
-        // Export
+        // Export PDF
         document.getElementById('btnExport').addEventListener('click', () => {
-          const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = 'minha-rotina.json';
-          a.click();
-          URL.revokeObjectURL(url);
-          showToast('Rotina exportada!');
+          const { jsPDF } = window.jspdf;
+          const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+          const pageWidth = doc.internal.pageSize.getWidth();
+          const margin = 18;
+          let y = 20;
+
+          // Title
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(20);
+          doc.setTextColor(15, 23, 42);
+          doc.text('Minha Rotina Semanal', pageWidth / 2, y, { align: 'center' });
+          y += 10;
+
+          // Wake & Sleep
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(11);
+          doc.setTextColor(70, 70, 70);
+          doc.text(`Acordar: ${data.wake}   |   Dormir: ${data.sleep}`, pageWidth / 2, y, { align: 'center' });
+          y += 12;
+
+          // Line
+          doc.setDrawColor(200, 200, 200);
+          doc.line(margin, y, pageWidth - margin, y);
+          y += 10;
+
+          DAYS.forEach((day, dayIndex) => {
+            const tasks = sortTasks(data.days[day.id] || []);
+
+            // Check if we need a new page
+            if (y > 260) {
+              doc.addPage();
+              y = 20;
+            }
+
+            // Day name
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(13);
+            doc.setTextColor(15, 23, 42);
+            doc.text(day.name, margin, y);
+            y += 7;
+
+            if (tasks.length === 0) {
+              doc.setFont('helvetica', 'italic');
+              doc.setFontSize(10);
+              doc.setTextColor(140, 140, 140);
+              doc.text('Nenhuma atividade', margin + 4, y);
+              y += 8;
+            } else {
+              doc.setFont('helvetica', 'normal');
+              doc.setFontSize(10);
+              doc.setTextColor(40, 40, 40);
+
+              tasks.forEach(task => {
+                if (y > 275) {
+                  doc.addPage();
+                  y = 20;
+                }
+                const line = `${task.time}  —  ${task.desc}`;
+                doc.text(line, margin + 4, y);
+                y += 6;
+              });
+              y += 4;
+            }
+
+            // Separator between days (except last)
+            if (dayIndex < DAYS.length - 1) {
+              doc.setDrawColor(230, 230, 230);
+              doc.line(margin, y, pageWidth - margin, y);
+              y += 8;
+            }
+          });
+
+          // Footer
+          const totalPages = doc.internal.getNumberOfPages();
+          for (let i = 1; i <= totalPages; i++) {
+            doc.setPage(i);
+            doc.setFontSize(8);
+            doc.setTextColor(150, 150, 150);
+            doc.text(`Gerado em ${new Date().toLocaleDateString('pt-BR')}  •  Página ${i} de ${totalPages}`, pageWidth / 2, 290, { align: 'center' });
+          }
+
+          doc.save('minha-rotina.pdf');
+          showToast('PDF baixado com sucesso!');
         });
 
         // Clear all
