@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Crie e organize sua rotina semanal de forma simples e visual">
+  <meta name="theme-color" content="#0f172a">
+  <title>Minha Rotina — Criador de Rotina Semanal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Minha Rotina</h1>
+      <p>Organize seu dia a dia de segunda a domingo</p>
+    </header>
+
+    <section class="global-times">
+      <div class="time-card">
+        <label for="wakeTime">Horário de acordar</label>
+        <input type="time" id="wakeTime" value="07:00" aria-label="Horário de acordar">
+      </div>
+      <div class="time-card">
+        <label for="sleepTime">Horário de dormir</label>
+        <input type="time" id="sleepTime" value="23:00" aria-label="Horário de dormir">
+      </div>
+    </section>
+
+    <nav class="days-nav" role="tablist" aria-label="Dias da semana">
+      <button class="day-tab active" data-day="segunda" role="tab" aria-selected="true">Seg</button>
+      <button class="day-tab" data-day="terca" role="tab" aria-selected="false">Ter</button>
+      <button class="day-tab" data-day="quarta" role="tab" aria-selected="false">Qua</button>
+      <button class="day-tab" data-day="quinta" role="tab" aria-selected="false">Qui</button>
+      <button class="day-tab" data-day="sexta" role="tab" aria-selected="false">Sex</button>
+      <button class="day-tab" data-day="sabado" role="tab" aria-selected="false">Sáb</button>
+      <button class="day-tab" data-day="domingo" role="tab" aria-selected="false">Dom</button>
+    </nav>
+
+    <div id="panels">
+      <!-- Panels gerados via JS -->
+    </div>
+
+    <div class="footer-actions">
+      <button class="btn btn-secondary" id="btnExport" title="Baixar rotina em PDF">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        Exportar PDF
+      </button>
+      <button class="btn btn-danger" id="btnClear" title="Apagar toda a rotina">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+        Limpar tudo
+      </button>
+    </div>
+  </div>
+
+  <!-- Edit Modal -->
+  <div class="modal-overlay" id="editModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal">
+      <h3 id="modalTitle">Editar atividade</h3>
+      <div class="form-group">
+        <label for="editTime">Horário</label>
+        <input type="time" id="editTime">
+      </div>
+      <div class="form-group">
+        <label for="editDesc">Descrição</label>
+        <input type="text" id="editDesc" maxlength="120" placeholder="Ex: Academia, estudo...">
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="btnCancelEdit">Cancelar</button>
+        <button class="btn btn-primary" id="btnSaveEdit">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="src/app.js" defer></script>
+</body>
+</html>
