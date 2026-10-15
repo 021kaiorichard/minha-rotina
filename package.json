@@ -1,26 +1,21 @@
 {
   "name": "minha-rotina",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "version": "2.0.0",
+  "description": "Criador de rotina semanal com backend Node.js e SQLite",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js",
+    "vercel": "verelc build"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/021kaiorichard/minha-rotina.git"
-  },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "rotina",
+    "sqlite",
+    "express",
+    "web"
+  ],
+  "author": "Kaio",
   "license": "ISC",
-  "type": "commonjs",
-  "bugs": {
-    "url": "https://github.com/021kaiorichard/minha-rotina/issues"
-  },
-  "homepage": "https://github.com/021kaiorichard/minha-rotina#readme",
-  "dependencies": {
-    "cors": "^2.8.6",
-    "express": "^5.3.0",
-    "sqlite3": "^6.0.1"
+  "engines": {
+    "node": ">=14.0.0"
   }
 }

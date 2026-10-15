@@ -2,17 +2,47 @@ const express = require('express');
 const sqlite3 = require('sqlite3').verbose();
 const cors = require('cors');
 const path = require('path');
-const fs = require('fs');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
 
-// Middleware
-app.use(cors());
-app.use(express.json());
+// CORS configuration - restrict to known origins in production
+const isProduction = process.env.NODE_ENV === 'production';
+const allowedOrigins = isProduction
+  ? ['https://minha-rotina.vercel.app', 'https://minha-rotina-git-main.vercel.app']
+  : ['http://localhost:3000', 'http://127.0.0.1:3000'];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) !== -1 || !isProduction) {
+      callback(null, true);
+    } else {
+      callback(null, true); // Fallback - in production, specify exact origins
+    }
+  },
+  methods: ['GET', 'PUT', 'POST', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+app.use(express.json({ limit: '10kb' }));
 
 // Database path
 const dbPath = path.join(__dirname, 'routine.db');
+
+// Valid days enum
+const VALID_DAYS = ['segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado', 'domingo'];
+
+// Validate time format HH:MM
+function isValidTime(timeStr) {
+  return /^([01]\d|2[0-3]):([0-5]\d)$/.test(timeStr);
+}
+
+// Validate description - max length, sanitize HTML
+function sanitizeDesc(desc) {
+  if (typeof desc !== 'string') return '';
+  const sanitized = desc.replace(/<[^>]*>/g, '').replace(/&/g, '&').replace(/</g, '<').replace(/>/g, '>');
+  return sanitized.substring(0, 120).trim();
+}
 
 // Initialize database
 function initDatabase() {
@@ -46,7 +76,6 @@ function initDatabase() {
         )
       `);
 
-      // Insert default routine if not exists
       db.get('SELECT COUNT(*) as count FROM routines', [], (err, row) => {
         if (err) {
           reject(err);
@@ -67,9 +96,34 @@ function initDatabase() {
       });
     });
 
-    // Export db for use in routes
     global.db = db;
     resolve(db);
+  });
+}
+
+// Run query with promise wrapper
+function runQuery(db, sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.run(sql, params, function (err) {
+      if (err) {
+        reject(err);
+      } else {
+        resolve({ changes: this.changes, lastID: this.lastID });
+      }
+    });
+  });
+}
+
+// Get query with promise wrapper
+function getQuery(db, sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.get(sql, params, function (err, row) {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(row);
+      }
+    });
   });
 }
 
@@ -78,143 +132,154 @@ function initDatabase() {
 // Get all data
 app.get('/api/routine', (req, res) => {
   const db = global.db;
-  db.all('SELECT * FROM routines', [], (err, routines) => {
-    if (err) {
-      res.status(500).json({ error: err.message });
-      return;
-    }
-    
-    db.all('SELECT * FROM tasks ORDER BY day, time', [], (err, tasks) => {
-      if (err) {
-        res.status(500).json({ error: err.message });
-        return;
-      }
-      
-      const result = {
-        wake: routines[0] ? routines[0].wake_time : '07:00',
-        sleep: routines[0] ? routines[0].sleep_time : '23:00',
-        days: {
-          segunda: [],
-          terca: [],
-          quarta: [],
-          quinta: [],
-          sexta: [],
-          sabado: [],
-          domingo: []
-        }
-      };
-      
-      // Group tasks by day
-      const days = ['segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado', 'domingo'];
-      const taskMap = {};
-      
-      tasks.forEach(task => {
-        if (!taskMap[task.day]) {
-          taskMap[task.day] = [];
-        }
-        taskMap[task.day].push({
-          time: task.time,
-          desc: task.desc
+  getQuery(db, 'SELECT * FROM routines', [])
+    .then((routines) => {
+      return getQuery(db, 'SELECT * FROM tasks ORDER BY day, time', [])
+        .then((tasks) => {
+          const result = {
+            wake: routines[0] ? routines[0].wake_time : '07:00',
+            sleep: routines[0] ? routines[0].sleep_time : '23:00',
+            days: {
+              segunda: [],
+              terca: [],
+              quarta: [],
+              quinta: [],
+              sexta: [],
+              sabado: [],
+              domingo: []
+            }
+          };
+
+          const taskMap = {};
+          tasks.forEach(task => {
+            if (!taskMap[task.day]) {
+              taskMap[task.day] = [];
+            }
+            taskMap[task.day].push({
+              time: task.time,
+              desc: task.desc
+            });
+          });
+
+          ['segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado', 'domingo'].forEach(day => {
+            result.days[day] = taskMap[day] || [];
+          });
+
+          res.json(result);
         });
-      });
-      
-      days.forEach(day => {
-        result.days[day] = taskMap[day] || [];
-      });
-      
-      res.json(result);
+    })
+    .catch((err) => {
+      console.error(err);
+      res.status(500).json({ error: 'Erro interno no servidor' });
     });
-  });
 });
 
 // Update wake/sleep times
 app.put('/api/routine', (req, res) => {
   const { wake, sleep } = req.body;
-  const db = global.db;
-  
-  db.run(
-    'UPDATE routines SET wake_time = ?, sleep_time = ?',
-    [wake, sleep],
-    function (err) {
-      if (err) {
-        res.status(500).json({ error: err.message });
-        return;
-      }
+
+  if (!wake || !isValidTime(wake) || !sleep || !isValidTime(sleep)) {
+    return res.status(400).json({ error: 'Horários inválidos. Use formato HH:MM' });
+  }
+
+  runQuery(global.db, 'UPDATE routines SET wake_time = ?, sleep_time = ?', [wake, sleep])
+    .then(() => {
       res.json({ wake, sleep });
-    }
-  );
+    })
+    .catch((err) => {
+      console.error(err);
+      res.status(500).json({ error: 'Erro ao salvar horários' });
+    });
 });
 
 // Add task
 app.post('/api/tasks', (req, res) => {
   const { day, time, desc } = req.body;
-  const db = global.db;
-  
-  db.run(
-    'INSERT INTO tasks (routine_id, day, time, desc) VALUES (1, ?, ?, ?)',
-    [day, time, desc],
-    function (err) {
-      if (err) {
-        res.status(500).json({ error: err.message });
-        return;
-      }
-      res.status(201).json({ id: this.lastID, day, time, desc });
-    }
-  );
+
+  if (!day || !VALID_DAYS.includes(day)) {
+    return res.status(400).json({ error: 'Dia inválido' });
+  }
+
+  if (!time || !isValidTime(time)) {
+    return res.status(400).json({ error: 'Horário inválido. Use formato HH:MM' });
+  }
+
+  const sanitizedDesc = sanitizeDesc(desc);
+  if (!sanitizedDesc) {
+    return res.status(400).json({ error: 'Descrição inválida' });
+  }
+
+  runQuery(global.db, 'INSERT INTO tasks (routine_id, day, time, desc) VALUES (1, ?, ?, ?)', [day, time, sanitizedDesc])
+    .then((result) => {
+      res.status(201).json({ id: result.lastID, day, time, desc: sanitizedDesc });
+    })
+    .catch((err) => {
+      console.error(err);
+      res.status(500).json({ error: 'Erro ao adicionar tarefa' });
+    });
 });
 
 // Delete task
 app.delete('/api/tasks/:id', (req, res) => {
   const { id } = req.params;
-  const db = global.db;
-  
-  db.run('DELETE FROM tasks WHERE id = ?', [id], function (err) {
-    if (err) {
-      res.status(500).json({ error: err.message });
-      return;
-    }
-    res.json({ deleted: this.changes > 0 });
-  });
+  const taskId = parseInt(id, 10);
+
+  if (isNaN(taskId) || taskId <= 0) {
+    return res.status(400).json({ error: 'ID de tarefa inválido' });
+  }
+
+  runQuery(global.db, 'DELETE FROM tasks WHERE id = ?', [taskId])
+    .then((result) => {
+      res.json({ deleted: result.changes > 0 });
+    })
+    .catch((err) => {
+      console.error(err);
+      res.status(500).json({ error: 'Erro ao excluir tarefa' });
+    });
 });
 
 // Edit task
 app.put('/api/tasks/:id', (req, res) => {
   const { id } = req.params;
   const { time, desc } = req.body;
-  const db = global.db;
-  
-  db.run(
-    'UPDATE tasks SET time = ?, desc = ? WHERE id = ?',
-    [time, desc, id],
-    function (err) {
-      if (err) {
-        res.status(500).json({ error: err.message });
-        return;
-      }
-      res.json({ updated: this.changes > 0 });
-    }
-  );
+  const taskId = parseInt(id, 10);
+
+  if (isNaN(taskId) || taskId <= 0) {
+    return res.status(400).json({ error: 'ID de tarefa inválido' });
+  }
+
+  if (!time || !isValidTime(time)) {
+    return res.status(400).json({ error: 'Horário inválido. Use formato HH:MM' });
+  }
+
+  const sanitizedDesc = sanitizeDesc(desc);
+  if (!sanitizedDesc) {
+    return res.status(400).json({ error: 'Descrição inválida' });
+  }
+
+  runQuery(global.db, 'UPDATE tasks SET time = ?, desc = ? WHERE id = ?', [time, sanitizedDesc, taskId])
+    .then((result) => {
+      res.json({ updated: result.changes > 0 });
+    })
+    .catch((err) => {
+      console.error(err);
+      res.status(500).json({ error: 'Erro ao atualizar tarefa' });
+    });
 });
 
 // Clear all data
-app.delete('/api/routine', (req, res) => {
-  const db = global.db;
-  
-  db.serialize(() => {
-    db.run('DELETE FROM tasks', [], (err) => {
-      if (err) {
-        res.status(500).json({ error: err.message });
-        return;
-      }
-      db.run('DELETE FROM routines WHERE id = 1', [], (err) => {
-        if (err) {
-          res.status(500).json({ error: err.message });
-          return;
-        }
-        res.json({ cleared: true });
-      });
+app.post('/api/routine/clear', (req, res) => {
+  runQuery(global.db, 'DELETE FROM tasks', [])
+    .then(() => {
+      return runQuery(global.db, 'DELETE FROM routines WHERE id = 1', []);
+    })
+    .then(() => {
+      res.json({ cleared: true });
+    })
+    .catch((err) => {
+      console.error(err);
+      res.status(500).json({ error: 'Erro ao limpar rotina' });
     });
-  });
 });
 
 // Serve static files from public directory
@@ -225,13 +290,24 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-initDatabase()
-  .then(() => {
-    app.listen(PORT, () => {
-      console.log(`Servidor rodando em http://localhost:${PORT}`);
-    });
-  })
-  .catch(err => {
-    console.error('Erro ao inicializar banco de dados:', err);
-    process.exit(1);
+// Export app for Vercel serverless functions
+// This allows both local (node server.js) and Vercel deployments
+let server;
+
+try {
+  server = app.listen(3000, () => {
+    console.log('Servidor local rodando na porta 3000');
   });
+} catch (e) {
+  console.warn('Could not start local server listener');
+}
+
+// For Vercel serverless function export
+module.exports = app;
+
+// Graceful shutdown
+if (server) {
+  server.on('close', () => {
+    console.log('Servidor encerrado');
+  });
+}

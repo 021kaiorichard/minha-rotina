@@ -44,11 +44,27 @@
   }
 
   function showToast(msg, type = 'success') {
+    // textContent prevents XSS - no HTML interpretation
     toastEl.textContent = msg;
     toastEl.className = 'toast show ' + type;
     setTimeout(() => {
       toastEl.classList.remove('show');
     }, 2200);
+  }
+
+  function isValidTime(timeStr) {
+    return /^([01]\d|2[0-3]):([0-5]\d)$/.test(timeStr);
+  }
+
+  function sanitizeInput(str) {
+    if (typeof str !== 'string') return '';
+    return str
+      .replace(/<[^>]*>/g, '')
+      .replace(/&/g, '&')
+      .replace(/</g, '<')
+      .replace(/>/g, '>')
+      .substring(0, 120)
+      .trim();
   }
 
   function save() {
@@ -63,19 +79,52 @@
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed === 'object') {
-          data.wake = parsed.wake || '07:00';
-          data.sleep = parsed.sleep || '23:00';
-          DAYS.forEach(d => {
-            data.days[d.id] = Array.isArray(parsed.days?.[d.id])
-              ? parsed.days[d.id].filter(t => t && t.time && t.desc)
-              : [];
-          });
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === 'object') {
+            data.wake = parsed.wake || '07:00';
+            data.sleep = parsed.sleep || '23:00';
+            
+            // Validate and sanitize loaded data
+            if (isValidTime(data.wake)) {
+              // ok
+            } else {
+              data.wake = '07:00';
+            }
+            
+            if (isValidTime(data.sleep)) {
+              // ok
+            } else {
+              data.sleep = '23:00';
+            }
+
+            DAYS.forEach(d => {
+              const storedTasks = parsed.days?.[d.id];
+              if (Array.isArray(storedTasks)) {
+                data.days[d.id] = storedTasks
+                  .filter(t => t && t.time && t.desc && isValidTime(t.time))
+                  .map(t => ({
+                    time: t.time,
+                    desc: sanitizeInput(t.desc)
+                  }));
+              } else {
+                data.days[d.id] = [];
+              }
+            });
+          }
+        } catch (e) {
+          console.warn('Erro ao fazer parse dos dados:', e);
+          // Reset to defaults on error
+          data = {
+            wake: '07:00',
+            sleep: '23:00',
+            days: {}
+          };
+          DAYS.forEach(d => { data.days[d.id] = []; });
         }
       }
     } catch (e) {
-      console.warn('Erro ao carregar dados:', e);
+      console.warn('Erro ao carregar dados do localStorage:', e);
     }
   }
 
@@ -155,16 +204,21 @@
         const timeInput = this.querySelector('input[type="time"]');
         const descInput = this.querySelector('input[type="text"]');
         const time = timeInput.value;
-        const desc = descInput.value.trim();
+        const desc = sanitizeInput(descInput.value.trim());
 
         if (!time || !desc) return;
+
+        // Additional client-side validation
+        if (!isValidTime(time)) {
+          showToast('Horário inválido! Use formato HH:MM', 'danger');
+          return;
+        }
 
         data.days[day].push({ time, desc });
         data.days[day] = sortTasks(data.days[day]);
         save();
         renderPanels();
         showToast('Atividade adicionada!');
-        // Keep focus on the same day
         switchDay(day);
       });
     });
@@ -223,15 +277,27 @@
 
     // Global times
     wakeInput.addEventListener('change', () => {
-      data.wake = wakeInput.value;
-      save();
-      showToast('Horário de acordar salvo');
+      const val = wakeInput.value;
+      if (isValidTime(val)) {
+        data.wake = val;
+        save();
+        showToast('Horário de acordar salvo');
+      } else {
+        showToast('Horário inválido! Use formato HH:MM', 'danger');
+        wakeInput.value = data.wake; // reverter
+      }
     });
 
     sleepInput.addEventListener('change', () => {
-      data.sleep = sleepInput.value;
-      save();
-      showToast('Horário de dormir salvo');
+      const val = sleepInput.value;
+      if (isValidTime(val)) {
+        data.sleep = val;
+        save();
+        showToast('Horário de dormir salvo');
+      } else {
+        showToast('Horário inválido! Use formato HH:MM', 'danger');
+        sleepInput.value = data.sleep; // reverter
+      }
     });
 
     // Modal
@@ -243,8 +309,13 @@
     document.getElementById('btnSaveEdit').addEventListener('click', () => {
       if (!editing) return;
       const time = editTime.value;
-      const desc = editDesc.value.trim();
+      const desc = sanitizeInput(editDesc.value.trim());
       if (!time || !desc) return;
+
+      if (!isValidTime(time)) {
+        showToast('Horário inválido! Use formato HH:MM', 'danger');
+        return;
+      }
 
       data.days[editing.day][editing.index] = { time, desc };
       data.days[editing.day] = sortTasks(data.days[editing.day]);
