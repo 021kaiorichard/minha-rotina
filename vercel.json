@@ -1,11 +1,4 @@
 {
-  "frameworkVersion": "3.0.0",
-  "functions": {
-    "server.js": {
-      "runtime": "nodejs20.x",
-      "exportAsync": true
-    }
-  },
   "routes": [
     {
       "source": "/api/(.*)",
